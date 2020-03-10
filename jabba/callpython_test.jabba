@@ -1,0 +1,18 @@
+! PROGRAM callpython_test
+
+  lat1  = sentence(1)
+  long1 = sentence(2)
+  lat2  = sentence(3)
+  long2 = sentence(4)
+
+  if len(long2) eq 0 then
+     crt 'Syntax: callpython_test <lat1> <long1> <lat2> <long2>'
+     stop
+  end
+
+  pyobj = new object("$python", "distance")
+
+  distance = pyobj->callsub('distance_between_points',lat1,long1,lat2,long2)
+
+  crt 'Distance between ': lat1:'/':long1:
+  crt ' and ':lat2:'/':long2:' is ':distance

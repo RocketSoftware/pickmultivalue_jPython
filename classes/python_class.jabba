@@ -1,0 +1,232 @@
+! Class for calling Python
+!
+INCLUDE JBC.h
+!
+! include some C headers
+!
+#header
+#ifndef JCLASS_PYTHONCLASS_DEFINED
+#define JCLASS_PYTHONCLASS_DEFINED
+#undef _POSIX_C_SOURCE
+#include <Python.h>
+#include "include/jbc_to_c.h"
+
+// Build VAR<-> C_ptr set/get functions
+makeVarToObjFuncs(PyObject);
+// Some other macros to make it less "C" like (yeah, right)
+#define JBCVAR(var,append) (_jb_ ## var ## _ ## append)
+#define VARTOSTR(var,append) CONV_SFB(JBCVAR(var,append))
+#define VARTOINT(var,append) CONV_IB(JBCVAR(var,append))
+// These ones specifically for Python
+// to make it less wordy
+#define setPyObject(obj,var,append) storePtrFromPyObject(obj, JBCVAR(var,append), dp);
+#define getPyObject(obj,var,append) PyObject * obj = getPtrForPyObject(JBCVAR(var,append), dp);
+#endif
+#endheader
+!
+! =============================
+! Constructor:
+! module: full-path of .py file
+! =============================
+!
+method $python::$python(module)
+#varappend CONSTRUCT
+    include include jbcpython_common.h
+    if len(module) eq 0 {
+        crt 'Fatal error: module cannot be null'
+        abort ;! someone fix the calling code!!
+    }
+    if unassigned(pymodules) {
+        pymodules = ''
+    }
+    if len(pymodules) eq 0 {
+#inline
+        // Initialize the Python interpreter.
+        Py_Initialize();
+        // Get the current path
+		PyObject *sysPath = PySys_GetObject("path");
+		// store this in jBC common
+		setPyObject(sysPath,PYSYSPATH,CONSTRUCT);
+#endinline
+    }
+    this->parse_module(module)
+end method
+!
+! =============================
+! Destructor:
+! =============================
+!
+method $python::~$python()
+#varappend DESTRUCT
+    include include jbcpython_common.h
+    pDict = this->pDict
+    pModule =this->pModule
+#inline
+    getPyObject(sysPath,PYSYSPATH,DESTRUCT);
+    getPyObject(pDict,PDICT,DESTRUCT);
+    getPyObject(pModule,PMODULE,DESTRUCT);
+    Py_DECREF(sysPath);
+    //Py_DECREF(pDict);
+    Py_DECREF(pModule);
+    // Destroy the Python interpreter.
+    Py_Finalize();
+#endinline
+end method
+!
+! =============================
+! Parse/process module
+! module: full-path of .py file
+! =============================
+!
+method $python::parse_module(module)
+#varappend PARSE
+    include include jbcpython_common.h
+! separate the path from the module
+    dlmc = dcount(module, DIR_DELIM_CH)
+    if dlmc eq 1 {
+        dlmc = 2
+        path = '.'
+    } else {
+        path = field(module, DIR_DELIM_CH, 1, dlmc - 1)
+        module = field(module, DIR_DELIM_CH, dlmc)
+    }
+    if path eq '.' {
+        rc = getcwd(path)
+    }
+! store the path in the list of paths
+    locate path in pypaths setting pos else
+        ins path before pypaths<pos>
+#inline
+        // first time for this path
+        // add it to the Python search paths
+        PyObject *path = PyUnicode_FromString(VARTOSTR(PATH,PARSE));
+        // retrieve our sysPath from COMMON
+        getPyObject(sysPath,PYSYSPATH,PARSE);
+        // add this path to our search paths
+        PyList_Insert(sysPath, 0, path);
+	    Py_DECREF(path); // memory related
+#endinline
+    end
+	
+    pModule = '' ;! initialise for storage
+    pDict = ''   ;! initialise for storage
+	
+#inline
+    // import the Python module
+    PyObject * pModule = PyImport_ImportModule(VARTOSTR(MODULE,PARSE));
+	if (PyErr_Occurred())
+	{
+	    PyErr_Print();
+	}
+    else
+    {
+        // store pModule in our own vars
+        setPyObject(pModule,PMODULE,PARSE);
+        // load the module and store it in pDict
+    	PyObject * pDict = PyModule_GetDict(pModule);
+        setPyObject(pDict,PDICT,PARSE);
+    }
+#endinline
+    this->pDict = pDict     ;! store as a member
+    this->pModule = pModule ;! store as a member
+end method
+!
+! =============================
+! Call function
+! ...args...
+! =============================
+!
+method $python::callsub()
+#varappend CALL
+    include include jbcpython_common.h
+    args = new object("$vararg")
+    argc = args->size() - 1 ;! fist arg is our method
+    funcname = args->next();! fuirst arg
+    pDict = this->pDict
+    pFunc = ''
+    pArgs = ''
+#inline
+    // retrieve our sysPath from COMMON
+    getPyObject(pDict,PDICT,CALL);
+    //create a pointer to the subroutine in our module
+	PyObject * pFunc = PyDict_GetItemString(pDict, VARTOSTR(FUNCNAME,CALL));
+    // store pFunc for use later
+    setPyObject(pFunc,PFUNC,CALL);
+    // initialise arg count
+    PyObject * pArgs = PyTuple_New(VARTOINT(ARGC,CALL));
+    setPyObject(pArgs,PARGS,CALL);
+#endinline
+    // Add each argument to pArgs
+    argpos = 0
+    loop while args->size() do
+        arg = args->next()
+#inline
+        getPyObject(pArgs,PARGS,CALL);
+        PyObject * pArg = PyUnicode_FromString(VARTOSTR(ARG,CALL));
+    	PyTuple_SetItem(pArgs, VARTOINT(ARGPOS,CALL), pArg);
+	    // need to freeDECR pArg
+#endinline
+        argpos++
+    repeat
+    result = ''
+#inline
+{
+    // get ourPython objects back from jBC
+    getPyObject(pFunc,PFUNC,CALL);
+    getPyObject(pArgs,PARGS,CALL);
+	// Call the function with the arguments.
+    PyObject* pResult = PyObject_CallObject(pFunc, pArgs);
+    Py_DECREF(pArgs);
+    if(pResult == NULL)
+    {
+    	printf("Calling the method failed.\n");
+	}
+    // Convert the result from a Python object.
+    char * result = 0;
+    double dresult = 0;
+    UINT32 isString = 0;
+    // Is it string?
+    if (PyUnicode_Check(pResult))
+    {
+        PyObject * pyStr = PyUnicode_AsEncodedString(pResult, "utf-8", "Error ~");
+    	if (PyErr_Occurred())
+    	{
+    	    PyErr_Print();
+    	}
+        result = PyBytes_AS_STRING(pyStr);
+    	if (PyErr_Occurred())
+    	{
+    	    PyErr_Print();
+    	}
+        isString = 1;
+	    Py_DECREF(pyStr);
+    }
+    else if (PyLong_Check(pResult))
+    {
+		dresult = PyLong_AsLong(pResult);
+    }
+    else if (PyFloat_Check(pResult))
+    {
+		dresult = PyFloat_AsDouble(pResult);
+    }
+    if (!isString)
+    {
+        // (my jbase build didn't include all the MATH functions)
+        // calculate size of string
+        size_t needed = snprintf(NULL, 0, "%lf", dresult) + 1;
+        result = malloc(needed);
+	    snprintf(result, needed, "%lf", dresult);
+    }
+    Py_DECREF(pResult);
+	
+    STORE_VBS(_jb_RESULT_CALL, result);
+	
+    if (!isString)
+    {
+        free(result);
+    }
+}
+#endinline
+
+    return result
+end method
