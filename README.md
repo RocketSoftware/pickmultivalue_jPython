@@ -26,7 +26,7 @@ make pythonMaj=3 pythonMin=7
 ```
 
 ## Running the Sample
-Build the shared library (see [Building](./Building))
+Build the shared library (see Building)
 
 Point your JBCOBJECTLIST to the location of the shared lib.
 >Alternatively **sudo cp lib/\* $JBCRELEASEDIR/lib**
