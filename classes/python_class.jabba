@@ -57,6 +57,10 @@ end method
 ! =============================
 !
 method $python::~$python()
+    this->destruct()
+end method
+
+method $python::destruct()
 #varappend DESTRUCT
     include include jbcpython_common.h
     pDict = this->pDict
@@ -107,10 +111,10 @@ method $python::parse_module(module)
 	    Py_DECREF(path); // memory related
 #endinline
     end
-	
+
     pModule = '' ;! initialise for storage
     pDict = ''   ;! initialise for storage
-	
+
 #inline
     // import the Python module
     PyObject * pModule = PyImport_ImportModule(VARTOSTR(MODULE,PARSE));
@@ -139,7 +143,11 @@ end method
 method $python::callsub()
 #varappend CALL
     include include jbcpython_common.h
-    args = new object("$vararg")
+	if this->$isproperty('args') then
+	    args = this->args
+	end else
+	    args = new object("$vararg")
+	end
     argc = args->size() - 1 ;! fist arg is our method
     funcname = args->next();! fuirst arg
     pDict = this->pDict
@@ -218,9 +226,9 @@ method $python::callsub()
 	    snprintf(result, needed, "%lf", dresult);
     }
     Py_DECREF(pResult);
-	
+
     STORE_VBS(_jb_RESULT_CALL, result);
-	
+
     if (!isString)
     {
         free(result);

@@ -9,10 +9,11 @@
      crt 'Syntax: callpython_test <lat1> <long1> <lat2> <long2>'
      stop
   end
+  distance = jPython::Function('distance','distance_between_points',lat1,long1,lat2,long2)
+  distance = jPython::Function('distance','distance_between_points',lat1,long1,lat2,long2)
+!  pyobj = new object("$python", "distance")
 
-  pyobj = new object("$python", "distance")
-
-  distance = pyobj->callsub('distance_between_points',lat1,long1,lat2,long2)
+!  distance = pyobj->callsub('distance_between_points',lat1,long1,lat2,long2)
 
   crt 'Distance between ': lat1:'/':long1:
   crt ' and ':lat2:'/':long2:' is ':distance
